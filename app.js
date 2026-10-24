@@ -44,7 +44,12 @@ const dmy = s => s.slice(8, 10) + '/' + s.slice(5, 7);
 const soma = o => Object.values(o).reduce((a, b) => a + b, 0);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const diasAte = iso => Math.round((new Date(iso + 'T12:00:00') - new Date(today() + 'T12:00:00')) / 864e5);
-function money(s) { s = String(s ?? '').trim().replace(/[R$\s]/g, ''); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); const v = parseFloat(s); return isFinite(v) ? r2(v) : NaN; }
+function money(s) {
+  s = String(s ?? '').trim().replace(/[R$\s]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');           // 1.200,50
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');        // 1.200 ou 12.000 (ponto de milhar)
+  const v = parseFloat(s); return isFinite(v) ? r2(v) : NaN;
+}
 function num(v) { if (typeof v === 'number') return isFinite(v) ? v : 0; const n = money(v); return isNaN(n) ? 0 : n; }
 function int(v) { const n = parseInt(v, 10); return isFinite(n) ? n : 0; }
 function toISO(v) {

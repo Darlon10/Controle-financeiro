@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Controle Financeiro</title>
+<meta name="description" content="Controle financeiro pessoal com os dados salvos na sua própria planilha do Google.">
+<meta name="theme-color" content="#2f45b5">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#f4f6f3;--surface:#ffffff;--surface-2:#eceeea;--fg:#151918;--muted:#5b625f;--line:#dcdfda;
+  --accent:#2f45b5;--accent-soft:#e6e9f9;--on-accent:#ffffff;
+  --good:#127650;--good-soft:#dff1e8;--bad:#b3372f;--bad-soft:#f7e3e1;--warn:#9a6200;--warn-soft:#f8ecd6;
+  --f-display:'Bricolage Grotesque',ui-sans-serif,system-ui,sans-serif;
+  --f-body:'Figtree',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#101312;--surface:#181c1b;--surface-2:#222725;--fg:#ebeeec;--muted:#a0a8a4;--line:#2c3330;
+  --accent:#8e9ef6;--accent-soft:#232a4f;--on-accent:#0f1430;
+  --good:#4fc493;--good-soft:#14301f;--bad:#f0857c;--bad-soft:#3a1c1a;--warn:#e6ac43;--warn-soft:#3a2c10;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:860px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px;display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:500;font-size:1.12rem;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:.86rem;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.saving{font-size:.8rem;color:var(--muted)}
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:8px;display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line)}
+.nav button{flex:1 0 auto;background:none;border:0;padding:9px 14px;border-radius:8px;font:inherit;font-weight:500;color:var(--muted);cursor:pointer}
+.nav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi.hero{background:var(--accent-soft);border-color:transparent}
+.kpi .l{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.kpi .v{font-family:var(--f-display);font-size:1.45rem;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.25}
+.kpi.hero .v{color:var(--accent)}
+.d{font-size:.8rem;color:var(--muted)}
+.up-good{color:var(--good)}.up-bad{color:var(--bad)}
+.monthbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mnav{display:flex;align-items:center;gap:6px}
+.mnav span{font-family:var(--f-display);font-weight:500;min-width:150px;text-align:center;font-size:1.05rem}
+.b{font:inherit;font-size:.88rem;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-block}
+.b:hover{border-color:var(--muted)}
+.b.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.b.sm{padding:5px 10px;font-size:.82rem}
+.b[disabled]{opacity:.6;cursor:wait}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:12px;align-items:end}
+.fld{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fld label,.lbl{font-size:.8rem;color:var(--muted);font-weight:500}
+.check{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--fg);padding-block:8px}
+.check input{width:auto}
+input,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;min-width:0}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px;gap:2px}
+.seg button{border:0;background:none;font:inherit;font-size:.88rem;font-weight:500;color:var(--muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.t{font-weight:500;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:.72rem;font-weight:500;padding:2px 7px;border-radius:6px;background:var(--surface-2);color:var(--muted)}
+.amt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.amt.in{color:var(--good)}
+.right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.x{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-size:.8rem;padding:4px 6px;border-radius:6px}
+.x:hover{color:var(--bad)}
+.x.sure{color:var(--bad);font-weight:600;background:var(--bad-soft)}
+.link{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-size:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.meter{height:10px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+.meter>div{height:100%;border-radius:5px;transition:width .3s}
+.cardhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.trio div{display:flex;flex-direction:column}
+.trio .l{font-size:.75rem;color:var(--muted)}
+.trio .v{font-weight:600;font-variant-numeric:tabular-nums;font-size:.95rem}
+.actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.inline{background:var(--surface-2);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.note{font-size:.82rem;color:var(--muted);margin:0}
+.item{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0;padding-top:4px}
+.fatura{background:var(--surface-2);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.err{color:var(--bad);font-size:.85rem;margin:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:.8rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.chart{position:relative;height:240px}
+.avisos{display:flex;flex-direction:column;gap:8px}
+.aviso{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;font-size:.9rem}
+.aviso.warn{background:var(--warn-soft)}
+.aviso.bad{background:var(--bad-soft)}
+.aviso.info{background:var(--surface-2)}
+.aviso .msg{min-width:0;flex:1 1 220px}
+.aviso input{max-width:120px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;max-width:calc(100% - 32px);z-index:20}
+.screen{min-height:70vh;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:16px;max-width:460px}
+.screen p{margin:0}
+.gbtn{display:inline-flex;align-items:center;gap:10px;font:inherit;font-weight:600;font-size:1rem;padding:11px 18px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.gbtn:hover{border-color:var(--muted)}
+.gdot{width:20px;height:20px;border-radius:50%;background:conic-gradient(#ea4335 0 25%,#fbbc05 0 50%,#34a853 0 75%,#4285f4 0)}
+.steps{margin:0;padding-left:20px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+@media (prefers-reduced-motion:reduce){.meter>div{transition:none}}
+@media (max-width:480px){.trio{grid-template-columns:1fr 1fr}.trio div:last-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Login -->
+  <section id="scrLogin" class="screen" hidden>
+    <h1>Controle Financeiro</h1>
+    <p class="sub">Seus gastos, cartões e financiamentos num só lugar. Os dados ficam numa planilha no seu próprio Google Drive. Só você tem acesso.</p>
+    <button class="gbtn" id="btnLogin"><span class="gdot" aria-hidden="true"></span>Entrar com Google</button>
+    <p class="err" id="loginMsg" hidden></p>
+    <p class="note">Na primeira vez, o Google pode mostrar o aviso "app não verificado". Toque em "Avançado" e depois em "Acessar Controle Financeiro". O app só consegue ver a planilha que ele mesmo cria. <a href="privacidade.html" style="color:var(--accent)">Política de privacidade</a></p>
+  </section>
+
+  <!-- Carregando -->
+  <section id="scrLoading" class="screen">
+    <h1>Controle Financeiro</h1>
+    <p class="sub" id="loadingMsg">Carregando…</p>
+  </section>
+
+  <!-- App -->
+  <div id="scrApp" hidden style="display:flex;flex-direction:column;gap:18px">
+    <header class="top">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <h1>Controle Financeiro</h1>
+        <p class="sub" id="userLine"></p>
+      </div>
+      <span class="saving" id="saving" hidden>Salvando…</span>
+    </header>
+
+    <nav class="nav" aria-label="Seções">
+      <button data-tab="resumo" aria-current="page">Resumo</button>
+      <button data-tab="lanc">Lançamentos</button>
+      <button data-tab="cartoes">Cartões</button>
+      <button data-tab="fins">Financiamentos</button>
+      <button data-tab="mais">Mais</button>
+    </nav>
+
+    <!-- RESUMO -->
+    <section id="t-resumo" style="display:flex;flex-direction:column;gap:16px">
+      <div id="avisos" class="avisos"></div>
+      <div class="monthbar">
+        <div class="mnav"><button class="b" data-act="mes" data-k="-1" aria-label="Mês anterior">‹</button><span class="mesLabel"></span><button class="b" data-act="mes" data-k="1" aria-label="Próximo mês">›</button></div>
+        <button class="b sm" data-act="mesHoje">Mês atual</button>
+      </div>
+      <div id="resumoBody" style="display:flex;flex-direction:column;gap:16px"></div>
+    </section>
+
+    <!-- LANÇAMENTOS -->
+    <section id="t-lanc" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2>Novo lançamento</h2>
+          <div class="seg" role="group" aria-label="Tipo"><button data-act="tipo" data-v="G" aria-pressed="true">Gasto</button><button data-act="tipo" data-v="R" aria-pressed="false">Recebimento</button></div>
+        </div>
+        <div class="form">
+          <div class="fld"><label for="fValor">Valor (R$)</label><input id="fValor" inputmode="decimal" placeholder="150,00" autocomplete="off"></div>
+          <div class="fld"><label for="fData">Data</label><input id="fData" type="date"></div>
+          <div class="fld" id="wOrigem" hidden><label for="fOrigem">Origem</label><select id="fOrigem"><option>Salário</option><option>Autônomo</option><option>Outro</option></select></div>
+          <div class="fld" id="wCat"><label for="fCat">Categoria</label><select id="fCat"></select></div>
+          <div class="fld" id="wPag"><span class="lbl">Pagamento</span><div class="seg" role="group" aria-label="Forma de pagamento" style="width:100%"><button data-act="pag" data-v="Pix/Débito" aria-pressed="true" style="flex:1">Pix/Débito</button><button data-act="pag" data-v="Crédito" aria-pressed="false" style="flex:1">Crédito</button></div></div>
+          <div class="fld" id="wCartao" hidden><label for="fCartao">Cartão</label><select id="fCartao"></select></div>
+          <div class="fld" id="wPar" hidden><label for="fPar">Parcelas</label><input id="fPar" type="number" min="1" max="48" step="1" value="1"></div>
+          <div class="fld" id="wFin" hidden><label for="fFin">Qual financiamento</label><select id="fFin"></select></div>
+          <div class="fld"><label for="fDesc">Descrição (opcional)</label><input id="fDesc" placeholder="Ração do cachorro" autocomplete="off"></div>
+          <div class="fld" id="wFixo"><label class="check"><input type="checkbox" id="fFixo"> Repetir todo mês</label></div>
+          <div class="fld"><button class="b pri" data-act="addLanc" style="padding:9px 12px">Adicionar</button></div>
+        </div>
+        <p class="err" id="fErr" hidden></p>
+      </div>
+      <div class="panel">
+        <div class="monthbar">
+          <h2 id="lancTitle">Lançamentos</h2>
+          <div class="mnav"><button class="b" data-act="mes" data-k="-1" aria-label="Mês anterior">‹</button><button class="b" data-act="mes" data-k="1" aria-label="Próximo mês">›</button></div>
+        </div>
+        <div id="lancList"></div>
+      </div>
+    </section>
+
+    <!-- CARTÕES -->
+    <section id="t-cartoes" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel"><h2>Seus cartões</h2><div id="cardList"></div></div>
+      <div class="panel">
+        <h2>Adicionar cartão</h2>
+        <div class="form">
+          <div class="fld"><label for="cBanco">Banco</label><select id="cBanco"></select></div>
+          <div class="fld"><label for="cApelido">Apelido (opcional)</label><input id="cApelido" placeholder="Pessoal, Black" autocomplete="off"></div>
+          <div class="fld"><label for="cLimite">Limite (R$)</label><input id="cLimite" inputmode="decimal" placeholder="3.000,00" autocomplete="off"></div>
+          <div class="fld"><label for="cFech">Dia de fechamento</label><input id="cFech" type="number" min="1" max="31" step="1" placeholder="3"></div>
+          <div class="fld"><label for="cVenc">Dia de vencimento</label><input id="cVenc" type="number" min="1" max="31" step="1" placeholder="10"></div>
+          <div class="fld"><button class="b pri" data-act="addCard" style="padding:9px 12px">Adicionar cartão</button></div>
+        </div>
+        <p class="note">O fechamento e o vencimento estão no app do banco. Com eles, cada compra entra na fatura certa e o app avisa quando a fatura vai vencer.</p>
+        <p class="err" id="cErr" hidden></p>
+      </div>
+    </section>
+
+    <!-- FINANCIAMENTOS -->
+    <section id="t-fins" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel"><h2>Seus financiamentos</h2><div id="finList"></div></div>
+      <div class="panel">
+        <h2>Adicionar financiamento</h2>
+        <div class="form">
+          <div class="fld"><label for="nNome">Nome</label><input id="nNome" placeholder="Carro, Apartamento" autocomplete="off"></div>
+          <div class="fld"><label for="nTipo">Tipo</label><select id="nTipo"><option>Veículo</option><option>Casa</option><option>Empréstimo</option><option>Outro</option></select></div>
+          <div class="fld"><label for="nTotal">Valor financiado (R$)</label><input id="nTotal" inputmode="decimal" placeholder="60.000,00"></div>
+          <div class="fld"><label for="nParc">Quantidade de parcelas</label><input id="nParc" type="number" min="1" step="1" placeholder="48"></div>
+          <div class="fld"><label for="nMensal">Valor mensal (R$)</label><input id="nMensal" inputmode="decimal" placeholder="1.250,00"></div>
+          <div class="fld"><label for="nPagas">Parcelas já pagas antes do app</label><input id="nPagas" type="number" min="0" step="1" value="0"></div>
+          <div class="fld"><label for="nDia">Dia de vencimento</label><input id="nDia" type="number" min="1" max="31" step="1" placeholder="15"></div>
+          <div class="fld"><button class="b pri" data-act="addFin" style="padding:9px 12px">Adicionar financiamento</button></div>
+        </div>
+        <p class="err" id="nErr" hidden></p>
+      </div>
+    </section>
+
+    <!-- MAIS -->
+    <section id="t-mais" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel">
+        <h2>Gastos fixos</h2>
+        <p class="note">Gastos que se repetem todo mês. Perto do dia, o app lembra de lançar, e você confirma o valor com um toque.</p>
+        <div id="fixoList"></div>
+        <div class="form">
+          <div class="fld"><label for="xDesc">Descrição</label><input id="xDesc" placeholder="Internet" autocomplete="off"></div>
+          <div class="fld"><label for="xValor">Valor (R$)</label><input id="xValor" inputmode="decimal" placeholder="99,90"></div>
+          <div class="fld"><label for="xCat">Categoria</label><select id="xCat"></select></div>
+          <div class="fld"><label for="xPag">Pagamento</label><select id="xPag"><option>Pix/Débito</option><option>Crédito</option></select></div>
+          <div class="fld" id="wxCartao" hidden><label for="xCartao">Cartão</label><select id="xCartao"></select></div>
+          <div class="fld"><label for="xDia">Dia do mês</label><input id="xDia" type="number" min="1" max="31" step="1" placeholder="10"></div>
+          <div class="fld"><button class="b pri" data-act="addFixo" style="padding:9px 12px">Adicionar gasto fixo</button></div>
+        </div>
+        <p class="err" id="xErr" hidden></p>
+      </div>
+      <div class="panel">
+        <h2>Limites por categoria</h2>
+        <p class="note">Defina quanto quer gastar no máximo por mês em uma categoria. O app avisa quando chegar a 80% e quando passar.</p>
+        <div id="metaList"></div>
+        <div class="form">
+          <div class="fld"><label for="mCat">Categoria</label><select id="mCat"></select></div>
+          <div class="fld"><label for="mLim">Limite por mês (R$)</label><input id="mLim" inputmode="decimal" placeholder="400,00"></div>
+          <div class="fld"><button class="b pri" data-act="addMeta" style="padding:9px 12px">Salvar limite</button></div>
+        </div>
+        <p class="err" id="mErr" hidden></p>
+      </div>
+      <div class="panel">
+        <h2>Sua conta</h2>
+        <p class="sub" id="contaLine"></p>
+        <p class="note">Lançamentos com mais de 6 meses vão para a aba "Arquivo" da planilha, e o resumo de cada mês fica na aba "Resumos". Os gráficos continuam mostrando o histórico.</p>
+        <div class="actions"><a class="b" id="sheetLink" href="#" target="_blank" rel="noopener">Abrir minha planilha</a><button class="b" data-act="reload">Atualizar dados</button><button class="b" data-act="logout">Sair</button></div>
+        <p class="note"><a href="privacidade.html" style="color:var(--accent)">Política de privacidade</a></p>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="app.js"></script>
+</body>
+</html>

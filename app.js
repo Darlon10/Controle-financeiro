@@ -98,7 +98,15 @@ function logout() {
 }
 
 /* ---------------- telas ---------------- */
-function showScreen(id) { ['scrLogin', 'scrLoading', 'scrApp'].forEach(s => $(s).hidden = s !== id); }
+function showScreen(id) { ['scrLogin', 'scrLoading', 'scrApp'].forEach(s => $(s).hidden = s !== id); $('band').hidden = id !== 'scrApp'; }
+function renderBand() {
+  const s = saldoConta(), abertos = C.reduce((a, c) => a + Math.max(0, usado(c)), 0);
+  $('bandSaldo').textContent = brl(s);
+  $('bandSaldo').style.color = s < 0 ? '#ffd4cf' : '';
+  $('bandMeta').innerHTML = ui.editSaldo
+    ? `<input id="saldoIni" inputmode="decimal" value="${fmtIn(num(CFG.saldo_inicial && CFG.saldo_inicial.v))}" aria-label="Saldo inicial"><button class="b sm pri" data-act="saveSaldo">Salvar</button><button class="b sm" data-act="cancelSaldo">Cancelar</button><span style="flex-basis:100%">Quanto você tinha na conta antes do primeiro lançamento.</span>`
+    : `<span>Cartões em aberto: ${brl(abertos)}</span><span aria-hidden="true">·</span><button class="link" data-act="editSaldo">ajustar saldo inicial</button>`;
+}
 function showLogin(msg) { showScreen('scrLogin'); const m = $('loginMsg'); m.textContent = msg || ''; m.hidden = !msg; }
 function showLoading(msg) { showScreen('scrLoading'); $('loadingMsg').textContent = msg; }
 let toastT; function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 4000); }
@@ -368,13 +376,10 @@ function renderResumo() {
   if (pie) { pie.destroy(); pie = null; } if (bar) { bar.destroy(); bar = null; }
   const ant = addM(ui.mes, -1);
   const g = gastosMes(ui.mes), gA = gastosMes(ant), ent = entradasMes(ui.mes), entA = entradasMes(ant), sai = soma(g), saiA = soma(gA);
-  const faturas = C.reduce((a, c) => a + Math.max(0, usado(c)), 0);
   const vazio = !L.length && !C.length && !F.length && !Object.keys(RZ).length;
   let h = '';
-  if (vazio) h += `<div class="panel"><h2>Comece por aqui</h2><ol class="steps"><li>Cadastre seus cartões, com limite, fechamento e vencimento.</li><li>Cadastre seus financiamentos, se tiver.</li><li>Informe quanto tem na conta hoje em "saldo inicial", logo abaixo.</li><li>Lance o que recebeu e o que gastou.</li></ol><div class="actions"><button class="b pri" data-act="goto" data-v="cartoes">Cadastrar cartão</button><button class="b" data-act="goto" data-v="lanc">Fazer um lançamento</button></div></div>`;
+  if (vazio) h += `<div class="panel"><h2>Comece por aqui</h2><ol class="steps"><li>Cadastre seus cartões, com limite, fechamento e vencimento.</li><li>Cadastre seus financiamentos, se tiver.</li><li>Informe quanto tem na conta hoje em "ajustar saldo inicial", no topo.</li><li>Lance o que recebeu e o que gastou.</li></ol><div class="actions"><button class="b pri" data-act="goto" data-v="cartoes">Cadastrar cartão</button><button class="b" data-act="goto" data-v="lanc">Fazer um lançamento</button></div></div>`;
   h += `<div class="kpis">
-    <div class="kpi hero"><span class="l">Saldo em conta hoje</span><span class="v">${brl(saldoConta())}</span>
-      ${ui.editSaldo ? `<div style="display:flex;gap:6px;margin-top:6px"><input id="saldoIni" inputmode="decimal" value="${fmtIn(num(CFG.saldo_inicial && CFG.saldo_inicial.v))}" aria-label="Saldo inicial"><button class="b sm pri" data-act="saveSaldo">Salvar</button></div><span class="d">Quanto você tinha na conta antes do primeiro lançamento.</span>` : `<span class="d">Cartões em aberto: ${brl(faturas)} · <button class="link" data-act="editSaldo">saldo inicial</button></span>`}</div>
     <div class="kpi"><span class="l">Entrou</span><span class="v">${brl(ent)}</span>${delta(ent, entA, false)}</div>
     <div class="kpi"><span class="l">Gastou</span><span class="v">${brl(sai)}</span>${delta(sai, saiA, true)}</div>
     <div class="kpi"><span class="l">Sobrou</span><span class="v" style="color:${ent - sai < 0 ? 'var(--bad)' : 'inherit'}">${brl(ent - sai)}</span>${delta(ent - sai, entA - saiA, false)}</div>
@@ -498,7 +503,7 @@ function visForm() {
 function render() {
   if ($('scrApp').hidden) return;
   $('userLine').textContent = EMAIL;
-  renderSelects(); visForm();
+  renderBand(); renderSelects(); visForm();
   document.querySelectorAll('.mesLabel').forEach(e => e.textContent = mesNome(ui.mes));
   if (ui.tab === 'resumo') renderResumo();
   renderLanc(); renderCards(); renderFins(); renderMais();
@@ -530,7 +535,8 @@ document.addEventListener('click', async e => {
     case 'pag': ui.pag = b.dataset.v; visForm(); break;
     case 'reload': await reload(); toast('Dados atualizados'); break;
     case 'logout': logout(); break;
-    case 'editSaldo': ui.editSaldo = true; render(); setTimeout(() => $('saldoIni') && $('saldoIni').focus(), 0); break;
+    case 'editSaldo': ui.editSaldo = true; renderBand(); setTimeout(() => $('saldoIni') && $('saldoIni').focus(), 0); break;
+    case 'cancelSaldo': ui.editSaldo = false; renderBand(); break;
     case 'saveSaldo': { const v = money($('saldoIni').value || '0'); if (isNaN(v)) { toast('Digite um valor válido, como 1.250,00.'); return; } ui.editSaldo = false; await setCfg('saldo_inicial', v, 'Saldo inicial salvo'); break; }
     case 'askDel': ui.confirm = b.dataset.k; render(); break;
     case 'del': { const [t, k] = b.dataset.k.split('|'); ui.confirm = null; await delRow(t, k, 'Excluído'); break; }

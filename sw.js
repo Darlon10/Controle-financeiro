@@ -1,6 +1,6 @@
 // Mantém o app instalável e abre a última versão salva se a rede falhar.
 // Sempre tenta a rede primeiro, então atualizações chegam na hora.
-const CACHE = 'cf-v4';
+const CACHE = 'cf-v5';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'privacidade.html'];
 
 self.addEventListener('install', e => {

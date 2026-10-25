@@ -242,15 +242,10 @@ input,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--surf
       <div class="panel">
         <h2>Adicionar financiamento</h2>
         <div class="form">
-          <div class="fld"><label for="nNome">Nome</label><input id="nNome" placeholder="Carro, Apartamento" autocomplete="off"></div>
-          <div class="fld"><label for="nTipo">Tipo</label><select id="nTipo"><option>Veículo</option><option>Casa</option><option>Empréstimo</option><option>Outro</option></select></div>
-          <div class="fld"><label for="nTotal">Valor financiado (R$)</label><input id="nTotal" inputmode="decimal" placeholder="60.000,00"></div>
-          <div class="fld"><label for="nParc">Quantidade de parcelas</label><input id="nParc" type="number" min="1" step="1" placeholder="48"></div>
-          <div class="fld"><label for="nMensal">Valor mensal (R$)</label><input id="nMensal" inputmode="decimal" placeholder="1.250,00"></div>
-          <div class="fld"><label for="nPagas">Parcelas já pagas antes do app</label><input id="nPagas" type="number" min="0" step="1" value="0"></div>
-          <div class="fld"><label for="nDia">Dia de vencimento</label><input id="nDia" type="number" min="1" max="31" step="1" placeholder="15"></div>
+          <div id="finFormAdd" style="display:contents"></div>
           <div class="fld"><button class="b pri" data-act="addFin" style="padding:9px 12px">Adicionar financiamento</button></div>
         </div>
+        <p class="note">Com a taxa de juros, o app calcula a parcela, o total de juros e quanto custaria quitar hoje. Se não souber a taxa, informe o valor da parcela que ele descobre sozinho.</p>
         <p class="err" id="nErr" hidden></p>
       </div>
     </section>

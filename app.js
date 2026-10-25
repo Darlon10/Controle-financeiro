@@ -10,7 +10,7 @@ const SS = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SHEETS = {
   Lancamentos: ['id', 'data', 'tipo', 'valor', 'categoria', 'origem', 'pagamento', 'cartao_id', 'cartao_nome', 'parcelas', 'financiamento_id', 'fixo_id', 'descricao', 'criado_em'],
   Cartoes: ['id', 'banco', 'apelido', 'limite', 'ajuste', 'dia_fechamento', 'dia_vencimento'],
-  Financiamentos: ['id', 'nome', 'tipo', 'valor_total', 'parcelas', 'valor_mensal', 'pagas_antes', 'dia_vencimento'],
+  Financiamentos: ['id', 'nome', 'tipo', 'valor_total', 'parcelas', 'valor_mensal', 'pagas_antes', 'dia_vencimento', 'taxa_juros', 'taxa_periodo', 'sistema'],
   Fixos: ['id', 'descricao', 'valor', 'categoria', 'pagamento', 'cartao_id', 'dia', 'ativo'],
   Metas: ['categoria', 'limite'],
   Resumos: ['mes', 'entradas', 'gastos', 'sobrou', 'categorias'],
@@ -190,6 +190,16 @@ async function load() {
     });
   });
   HEAD.Arquivo = SHEETS.Arquivo;
+  // Planilhas criadas por versões antigas: acrescenta as colunas novas no fim da primeira linha
+  const reqs = [];
+  for (const t of LOAD_TABS) {
+    const miss = SHEETS[t].filter(h => !HEAD[t].includes(h));
+    if (!miss.length || SID[t] == null) continue;
+    reqs.push({ updateCells: { start: { sheetId: SID[t], rowIndex: 0, columnIndex: HEAD[t].length }, rows: [{ values: miss.map(h => ({ userEnteredValue: { stringValue: h }, userEnteredFormat: { textFormat: { bold: true } } })) }], fields: 'userEnteredValue,userEnteredFormat.textFormat' } });
+    HEAD[t] = HEAD[t].concat(miss);
+    D[t].forEach(o => miss.forEach(h => o[h] = ''));
+  }
+  if (reqs.length) await api(`${SS}/${SSID}:batchUpdate`, { method: 'POST', body: JSON.stringify({ requests: reqs }) });
   normalize();
 }
 function normalize() {
@@ -200,7 +210,7 @@ function normalize() {
     fin: String(o.financiamento_id || ''), fixo: String(o.fixo_id || ''), desc: String(o.descricao || ''), criado: num(o.criado_em)
   })).filter(l => l.id && l.data && l.valor > 0);
   C = D.Cartoes.map(o => ({ row: o._row, raw: o, id: String(o.id), banco: String(o.banco || 'Cartão'), apelido: String(o.apelido || ''), limite: num(o.limite), ajuste: num(o.ajuste), fech: int(o.dia_fechamento), venc: int(o.dia_vencimento) })).filter(c => c.id);
-  F = D.Financiamentos.map(o => ({ row: o._row, raw: o, id: String(o.id), nome: String(o.nome || 'Financiamento'), tipo: String(o.tipo || 'Outro'), total: num(o.valor_total), parc: Math.max(1, int(o.parcelas)), mensal: num(o.valor_mensal), pagasAntes: int(o.pagas_antes), dia: int(o.dia_vencimento) })).filter(f => f.id);
+  F = D.Financiamentos.map(o => ({ row: o._row, raw: o, id: String(o.id), nome: String(o.nome || 'Financiamento'), tipo: String(o.tipo || 'Outro'), total: num(o.valor_total), parc: Math.max(1, int(o.parcelas)), mensal: num(o.valor_mensal), pagasAntes: int(o.pagas_antes), dia: int(o.dia_vencimento), taxa: num(o.taxa_juros), periodo: /ano/i.test(String(o.taxa_periodo)) ? 'ano' : 'mês', sistema: /sac|decresc/i.test(String(o.sistema)) ? 'SAC' : 'Price' })).filter(f => f.id);
   X = D.Fixos.map(o => ({ row: o._row, raw: o, id: String(o.id), desc: String(o.descricao || 'Gasto fixo'), valor: num(o.valor), cat: String(o.categoria || 'Outros'), pag: String(o.pagamento || PIX), cartao: String(o.cartao_id || ''), dia: Math.max(1, int(o.dia) || 1), ativo: !/^(não|nao|false|0)$/i.test(String(o.ativo).trim()) })).filter(x => x.id);
   M = D.Metas.map(o => ({ row: o._row, cat: String(o.categoria), lim: num(o.limite) })).filter(m => m.cat && m.lim > 0);
   RZ = {}; D.Resumos.forEach(o => { const mes = toYM(o.mes); if (!mes) return; let cats = {}; try { cats = JSON.parse(o.categorias || '{}'); } catch (e) {} RZ[mes] = { row: o._row, ent: num(o.entradas), cats }; });
@@ -296,6 +306,48 @@ function faturaInfo(c) {
 }
 const pagasFin = f => f.pagasAntes + L.filter(l => l.tipo === T.G && l.fin === f.id).length;
 
+/* ---------- juros dos financiamentos ---------- */
+const taxaMes = (taxa, periodo) => taxa > 0 ? (periodo === 'ano' ? Math.pow(1 + taxa / 100, 1 / 12) - 1 : taxa / 100) : 0;
+const pmt = (P, i, n) => i > 0 ? P * i / (1 - Math.pow(1 + i, -n)) : P / n;
+// Taxa mensal que faz n parcelas de valor `parc` pagarem P (tabela Price)
+function taxaImplicita(P, parc, n) {
+  if (!(P > 0 && parc > 0 && n > 0) || parc * n <= P + .005) return 0;
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 100; k++) { const mid = (lo + hi) / 2; if (pmt(P, mid, n) > parc) hi = mid; else lo = mid; }
+  return (lo + hi) / 2;
+}
+// Todas as contas de um financiamento
+function finCalc(f) {
+  const n = f.parc, P = f.total, pg = Math.min(pagasFin(f), n), rest = n - pg;
+  const out = { pg, rest, i: 0, implicita: false, parcela: f.mensal, totalPagar: null, totalJuros: null, jurosPagos: null, saldo: null, faltaPagar: f.mensal * rest };
+  if (!(P > 0)) return out;
+  let i = taxaMes(f.taxa, f.periodo);
+  if (f.sistema === 'SAC') {
+    const A = P / n;
+    if (!i && f.mensal > A) { i = (f.mensal - A) / P; out.implicita = true; }   // 1ª parcela = amortização + juros sobre o total
+    const parcK = k => A + (P - A * (k - 1)) * i;
+    out.i = i;
+    out.parcela = rest ? parcK(pg + 1) : 0;
+    out.totalJuros = i * A * n * (n + 1) / 2;
+    out.totalPagar = P + out.totalJuros;
+    out.saldo = Math.max(0, P - A * pg);
+    out.jurosPagos = i * (pg * P - A * pg * (pg - 1) / 2);
+    out.faltaPagar = out.saldo + i * A * rest * (rest + 1) / 2;
+    return out;
+  }
+  const parc = f.mensal > 0 ? f.mensal : pmt(P, i, n);
+  if (!i && f.mensal > 0) { i = taxaImplicita(P, f.mensal, n); out.implicita = i > 0; }
+  out.i = i; out.parcela = parc;
+  out.totalPagar = parc * n;
+  out.totalJuros = Math.max(0, out.totalPagar - P);
+  const g = Math.pow(1 + i, pg);
+  out.saldo = rest ? Math.max(0, i > 0 ? P * g - parc * (g - 1) / i : P - parc * pg) : 0;
+  out.jurosPagos = Math.max(0, parc * pg - (P - out.saldo));
+  out.faltaPagar = parc * rest;
+  return out;
+}
+const pct = v => (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+
 /* ---------- arquivamento após 6 meses ---------- */
 let archiveChecked = false;
 async function maybeArchive() {
@@ -356,7 +408,8 @@ function avisos() {
     const pg = pagasFin(f); if (pg >= f.parc) continue;
     if (L.some(l => l.tipo === T.G && l.fin === f.id && ymOf(l.data) === curYM)) continue;
     if (diaHoje < (f.dia || 1) - 3) continue;
-    out.push({ cls: 'info', msg: `Parcela ${pg + 1} de ${f.parc} do <b>${esc(f.nome)}</b> (${brl(f.mensal)}) ainda não foi lançada este mês.`, btn: `<button class="b sm" data-act="lancarFin" data-id="${f.id}">Lançar parcela</button>` });
+    const fc = finCalc(f);
+    out.push({ cls: 'info', msg: `Parcela ${pg + 1} de ${f.parc} do <b>${esc(f.nome)}</b> ainda não foi lançada este mês.`, btn: `<input inputmode="decimal" id="pf-a-${f.id}" value="${fmtIn(r2(fc.parcela))}" aria-label="Valor da parcela"><button class="b sm" data-act="lancarFin" data-id="${f.id}" data-src="pf-a-${f.id}">Lançar</button>` });
   }
   for (const x of X) {
     if (!x.ativo) continue;
@@ -457,20 +510,55 @@ function renderCards() {
   }).join('');
 }
 
+function finForm(pfx, f) {
+  f = f || { nome: '', tipo: 'Veículo', total: 0, parc: '', mensal: 0, pagasAntes: 0, dia: '', taxa: 0, periodo: 'mês', sistema: 'Price' };
+  const sel = (v, a) => v === a ? ' selected' : '';
+  return `<div class="fld"><label for="${pfx}n">Nome</label><input id="${pfx}n" value="${esc(f.nome)}" placeholder="Carro, Apartamento" autocomplete="off"></div>
+    <div class="fld"><label for="${pfx}t">Tipo</label><select id="${pfx}t">${['Veículo', 'Casa', 'Empréstimo', 'Outro'].map(t => `<option${sel(t, f.tipo)}>${t}</option>`).join('')}</select></div>
+    <div class="fld"><label for="${pfx}v">Valor financiado (R$)</label><input id="${pfx}v" inputmode="decimal" value="${fmtIn(f.total)}" placeholder="50.000,00"></div>
+    <div class="fld"><label for="${pfx}p">Quantidade de parcelas</label><input id="${pfx}p" type="number" min="1" step="1" value="${f.parc}" placeholder="48"></div>
+    <div class="fld"><label for="${pfx}j">Taxa de juros (%)</label><div style="display:flex;gap:6px"><input id="${pfx}j" inputmode="decimal" value="${f.taxa ? String(f.taxa).replace('.', ',') : ''}" placeholder="1,49"><select id="${pfx}jp" style="max-width:110px"><option value="mês"${sel('mês', f.periodo)}>ao mês</option><option value="ano"${sel('ano', f.periodo)}>ao ano</option></select></div></div>
+    <div class="fld"><label for="${pfx}s">Tipo de parcela</label><select id="${pfx}s"><option value="Price"${sel('Price', f.sistema)}>Fixa (Price)</option><option value="SAC"${sel('SAC', f.sistema)}>Diminui todo mês (SAC)</option></select></div>
+    <div class="fld"><label for="${pfx}m">Valor da parcela (R$)</label><input id="${pfx}m" inputmode="decimal" value="${fmtIn(f.mensal)}" placeholder="Opcional se informar a taxa"></div>
+    <div class="fld"><label for="${pfx}a">Parcelas já pagas antes do app</label><input id="${pfx}a" type="number" min="0" step="1" value="${f.pagasAntes || 0}"></div>
+    <div class="fld"><label for="${pfx}d">Dia de vencimento</label><input id="${pfx}d" type="number" min="1" max="31" value="${f.dia || ''}" placeholder="15"></div>`;
+}
+function readFinForm(pfx) {
+  const v = id => $(pfx + id).value;
+  const o = { nome: v('n').trim(), tipo: v('t'), total: money(v('v')), parc: int(v('p')), taxa: money(v('j')), periodo: v('jp'), sistema: v('s'), mensal: money(v('m')), pagasAntes: Math.max(0, int(v('a'))), dia: int(v('d')) };
+  if (!o.nome) return { err: 'Dê um nome ao financiamento, como "Carro".' };
+  if (!(o.parc > 0)) return { err: 'Informe a quantidade de parcelas.' };
+  if (!(o.taxa >= 0)) o.taxa = 0;
+  if (!(o.total > 0)) o.total = 0;
+  if (!(o.mensal > 0)) o.mensal = 0;
+  if (!o.mensal && !(o.total > 0)) return { err: 'Informe o valor da parcela, ou o valor financiado junto com a taxa de juros.' };
+  if (!o.mensal) {   // calcula a parcela a partir da taxa
+    const i = taxaMes(o.taxa, o.periodo);
+    o.mensal = r2(o.sistema === 'SAC' ? o.total / o.parc + o.total * i : pmt(o.total, i, o.parc));
+  }
+  if (!o.total) o.total = r2(o.mensal * o.parc);
+  return { row: { nome: o.nome, tipo: o.tipo, valor_total: o.total, parcelas: o.parc, valor_mensal: o.mensal, pagas_antes: Math.min(o.pagasAntes, o.parc), dia_vencimento: o.dia >= 1 && o.dia <= 31 ? o.dia : '', taxa_juros: o.taxa || '', taxa_periodo: o.periodo, sistema: o.sistema } };
+}
+
 function renderFins() {
   if (!F.length) { $('finList').innerHTML = '<p class="sub">Nenhum financiamento cadastrado. Adicione abaixo: veículo, casa, empréstimo ou outro.</p>'; return; }
   const curYM = ymOf(today());
   $('finList').innerHTML = F.map(f => {
-    const pg = Math.min(pagasFin(f), f.parc), falt = Math.max(0, f.parc - pg), pc = pg / f.parc * 100;
+    const fc = finCalc(f), pg = fc.pg, falt = fc.rest, pc = pg / f.parc * 100;
     const p = ui.panel && ui.panel.id === f.id ? ui.panel.kind : null;
     const mesPago = L.some(l => l.tipo === T.G && l.fin === f.id && ymOf(l.data) === curYM);
     let painel = '';
-    if (p === 'editar') painel = `<div class="inline"><div class="form"><div class="fld"><label for="zn">Nome</label><input id="zn" value="${esc(f.nome)}"></div><div class="fld"><label for="zt">Tipo</label><select id="zt">${['Veículo', 'Casa', 'Empréstimo', 'Outro'].map(t => `<option${t === f.tipo ? ' selected' : ''}>${t}</option>`).join('')}</select></div><div class="fld"><label for="zv">Valor financiado (R$)</label><input id="zv" inputmode="decimal" value="${fmtIn(f.total)}"></div><div class="fld"><label for="zp">Parcelas</label><input id="zp" type="number" min="1" step="1" value="${f.parc}"></div><div class="fld"><label for="zm">Valor mensal (R$)</label><input id="zm" inputmode="decimal" value="${fmtIn(f.mensal)}"></div><div class="fld"><label for="za">Pagas antes do app</label><input id="za" type="number" min="0" step="1" value="${f.pagasAntes}"></div><div class="fld"><label for="zd">Dia de vencimento</label><input id="zd" type="number" min="1" max="31" value="${f.dia || ''}"></div><div class="fld"><button class="b pri" data-act="saveFin" data-id="${f.id}">Salvar</button></div></div></div>`;
-    return `<div class="item"><div class="cardhead"><span class="t" style="font-weight:600;font-size:1.02rem">${esc(f.nome)} <span class="chip">${esc(f.tipo)}</span></span><span class="d">${!falt ? 'Quitado' : mesPago ? 'Parcela deste mês lançada' : 'Parcela deste mês pendente' + (f.dia ? ' · vence dia ' + f.dia : '')}</span></div>
+    if (p === 'editar') painel = `<div class="inline"><div class="form">${finForm('z', f)}<div class="fld"><button class="b pri" data-act="saveFin" data-id="${f.id}">Salvar</button></div></div><p class="note">Deixe o valor da parcela em branco para o app calcular pela taxa. Se você informar a parcela e não a taxa, o app descobre a taxa sozinho.</p></div>`;
+    else if (p === 'parcela') painel = `<div class="inline"><div class="form"><div class="fld"><label for="pf-${f.id}">Valor pago nesta parcela (R$)</label><input id="pf-${f.id}" inputmode="decimal" value="${fmtIn(r2(fc.parcela))}"></div><div class="fld"><button class="b pri" data-act="lancarFin" data-id="${f.id}" data-src="pf-${f.id}">Lançar parcela ${pg + 1} de ${f.parc}</button></div></div><p class="note">O valor sugerido vem da conta com juros. Se o boleto veio diferente (seguro, correção, atraso), troque pelo valor real.</p></div>`;
+    const temJuros = fc.totalJuros != null && fc.i > 0;
+    const taxaTxt = temJuros ? `${pct(fc.i)} ao mês (${pct(Math.pow(1 + fc.i, 12) - 1)} ao ano)${fc.implicita ? ' · calculada pela parcela' : ''}` : '';
+    const juros = fc.totalJuros != null ? `<div class="trio"><div><span class="l">Total de juros</span><span class="v">${brl(fc.totalJuros)}</span></div><div><span class="l">Juros já pagos</span><span class="v">${brl(fc.jurosPagos)}</span></div><div><span class="l">Para quitar hoje (estimativa)</span><span class="v">${brl(fc.saldo)}</span></div></div>` : `<p class="note">Informe o valor financiado em "Editar" para ver o total de juros e quanto custaria quitar hoje.</p>`;
+    return `<div class="item"><div class="cardhead"><span class="t" style="font-weight:600;font-size:1.02rem">${esc(f.nome)} <span class="chip">${esc(f.tipo)}</span>${f.sistema === 'SAC' ? ' <span class="chip">Parcela decrescente</span>' : ''}</span><span class="d">${!falt ? 'Quitado' : mesPago ? 'Parcela deste mês lançada' : 'Parcela deste mês pendente' + (f.dia ? ' · vence dia ' + f.dia : '')}</span></div>
       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="${f.parc}" aria-valuenow="${pg}" aria-label="Parcelas pagas"><div style="width:${pc}%;background:var(--accent)"></div></div>
-      <div class="trio"><div><span class="l">Parcelas pagas</span><span class="v">${pg} de ${f.parc}</span></div><div><span class="l">Valor mensal</span><span class="v">${brl(f.mensal)}</span></div><div><span class="l">Falta pagar</span><span class="v">${brl(falt * f.mensal)}</span></div></div>
-      <p class="d" style="margin:0">Valor financiado: ${brl(f.total)} · ${falt} parcela${falt === 1 ? '' : 's'} restante${falt === 1 ? '' : 's'}</p>
-      <div class="actions">${falt && !mesPago ? `<button class="b sm" data-act="lancarFin" data-id="${f.id}">Lançar parcela de ${brl(f.mensal)}</button>` : ''}<button class="b sm" data-act="panel" data-id="${f.id}" data-v="editar">Editar</button>${delBtn('Financiamentos', f.id)}</div>${painel}</div>`;
+      <div class="trio"><div><span class="l">Parcelas pagas</span><span class="v">${pg} de ${f.parc}</span></div><div><span class="l">${f.sistema === 'SAC' ? 'Próxima parcela' : 'Valor da parcela'}</span><span class="v">${brl(fc.parcela)}</span></div><div><span class="l">Falta pagar (parcelas)</span><span class="v">${brl(fc.faltaPagar)}</span></div></div>
+      ${juros}
+      <p class="d" style="margin:0">Valor financiado: ${brl(f.total)}${fc.totalPagar != null ? ' · total com juros: ' + brl(fc.totalPagar) : ''}${taxaTxt ? ' · taxa: ' + taxaTxt : ''}</p>
+      <div class="actions">${falt && !mesPago ? `<button class="b sm" data-act="panel" data-id="${f.id}" data-v="parcela"${p === 'parcela' ? ' style="border-color:var(--accent);color:var(--accent)"' : ''}>Lançar parcela</button>` : ''}<button class="b sm" data-act="panel" data-id="${f.id}" data-v="editar">Editar</button>${delBtn('Financiamentos', f.id)}</div>${painel}</div>`;
   }).join('');
 }
 
@@ -611,24 +699,24 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'addFin': {
-      const nome = $('nNome').value.trim(), total = money($('nTotal').value), parc = int($('nParc').value), mensal = money($('nMensal').value), pagas = Math.max(0, int($('nPagas').value)), dia = int($('nDia').value);
-      if (!nome) return showErr('nErr', 'Dê um nome ao financiamento, como "Carro".');
-      if (!(parc > 0)) return showErr('nErr', 'Informe a quantidade de parcelas.');
-      if (!(mensal > 0)) return showErr('nErr', 'Informe o valor mensal da parcela.');
+      const r = readFinForm('n'); if (r.err) return showErr('nErr', r.err);
       showErr('nErr', '');
-      if (await addRows([['Financiamentos', { id: uid(), nome, tipo: $('nTipo').value, valor_total: total > 0 ? total : r2(mensal * parc), parcelas: parc, valor_mensal: mensal, pagas_antes: Math.min(pagas, parc), dia_vencimento: dia >= 1 && dia <= 31 ? dia : '' }]], 'Financiamento adicionado')) { ['nNome', 'nTotal', 'nParc', 'nMensal', 'nDia'].forEach(i => $(i).value = ''); $('nPagas').value = 0; }
+      if (await addRows([['Financiamentos', { id: uid(), ...r.row }]], 'Financiamento adicionado')) { ['nn', 'nv', 'np', 'nj', 'nm', 'nd'].forEach(i => $(i).value = ''); $('na').value = 0; }
       break;
     }
     case 'saveFin': {
-      const parc = int($('zp').value), mensal = money($('zm').value);
-      if (!(parc > 0 && mensal > 0)) { toast('Confira a quantidade de parcelas e o valor mensal.'); return; }
+      const r = readFinForm('z'); if (r.err) { toast(r.err); return; }
       ui.panel = null;
-      await updRow('Financiamentos', id, { nome: $('zn').value.trim() || 'Financiamento', tipo: $('zt').value, valor_total: money($('zv').value) || 0, parcelas: parc, valor_mensal: mensal, pagas_antes: Math.max(0, int($('za').value)), dia_vencimento: int($('zd').value) || '' }, 'Financiamento atualizado');
+      await updRow('Financiamentos', id, r.row, 'Financiamento atualizado');
       break;
     }
     case 'lancarFin': {
       const f = finById(id); if (!f) return;
-      await addRows([['Lancamentos', { id: uid(), data: today(), tipo: T.G, valor: f.mensal, categoria: 'Financiamentos', pagamento: PIX, parcelas: 1, financiamento_id: f.id, descricao: 'Parcela ' + (pagasFin(f) + 1) + ' de ' + f.parc, criado_em: Date.now() }]], 'Parcela lançada');
+      const src = b.dataset.src && $(b.dataset.src);
+      const v = src ? money(src.value) : r2(finCalc(f).parcela);
+      if (!(v > 0)) { toast('Digite o valor da parcela.'); return; }
+      ui.panel = null;
+      await addRows([['Lancamentos', { id: uid(), data: today(), tipo: T.G, valor: v, categoria: 'Financiamentos', pagamento: PIX, parcelas: 1, financiamento_id: f.id, descricao: 'Parcela ' + (pagasFin(f) + 1) + ' de ' + f.parc, criado_em: Date.now() }]], 'Parcela lançada');
       break;
     }
     case 'lancarFixo': {
@@ -667,6 +755,7 @@ $('xPag').addEventListener('change', visForm);
 $('fValor').addEventListener('keydown', e => { if (e.key === 'Enter') document.querySelector('[data-act="addLanc"]').click(); });
 $('btnLogin').addEventListener('click', login);
 $('fData').value = today();
+$('finFormAdd').innerHTML = finForm('n');
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (ui.tab === 'resumo' && !$('scrApp').hidden) renderResumo(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SSID && !ui.busy) { if (tokenOk()) reload(); else showLogin('Sua sessão do Google expirou. Entre de novo para continuar.'); } });
 

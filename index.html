@@ -143,6 +143,7 @@ input,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--surf
         <p class="who" id="userLine"></p>
       </div>
       <span class="saving" id="saving" hidden>Salvando…</span>
+      <button class="b sm" id="reconn" data-act="renew" hidden>Reconectar ao Google</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:4px">
       <span class="lb">Saldo em conta hoje</span>
@@ -156,7 +157,8 @@ input,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--surf
   <!-- Login -->
   <section id="scrLogin" class="screen" hidden>
     <div class="login-hero"><h1>Controle Financeiro</h1><p>Seus gastos, cartões e financiamentos num só lugar. Os dados ficam numa planilha no seu próprio Google Drive, e só você tem acesso.</p></div>
-    <button class="gbtn" id="btnLogin"><span class="gdot" aria-hidden="true"></span>Entrar com Google</button>
+    <button class="gbtn" id="btnLogin"><span class="gdot" aria-hidden="true"></span><span>Entrar com Google</span></button>
+    <button class="link" id="btnOutra" hidden>Usar outra conta Google</button>
     <p class="err" id="loginMsg" hidden></p>
     <p class="note">Na primeira vez, o Google pode mostrar o aviso "app não verificado". Toque em "Avançado" e depois em "Acessar Controle Financeiro". O app só consegue ver a planilha que ele mesmo cria. <a href="privacidade.html" style="color:var(--accent)">Política de privacidade</a></p>
   </section>

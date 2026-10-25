@@ -79,9 +79,23 @@ function initGis() {
   if (tokenClient || !(window.google && google.accounts && google.accounts.oauth2)) return;
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID, scope: SCOPES, callback: onToken,
-    error_callback: e => showLogin(e && e.type === 'popup_closed' ? 'A janela do Google foi fechada antes de terminar. Toque em "Entrar com Google" de novo.' : 'Não deu para abrir o login do Google. Libere janelas pop-up para este site e tente de novo.')
+    error_callback: e => {
+      pendingBtn = null;
+      const msg = e && e.type === 'popup_closed' ? 'A janela do Google foi fechada antes de terminar. Tente de novo.' : 'Não deu para abrir o login do Google. Libere janelas pop-up para este site e tente de novo.';
+      if (SSID && !$('scrApp').hidden) toast(msg); else showLogin(msg);
+    }
   });
 }
+// Renova o acesso sem pedir a conta de novo (precisa vir de um toque do usuário)
+let pendingBtn = null;
+function renew() {
+  initGis();
+  if (!tokenClient) { toast('O Google ainda está carregando. Tente de novo em instantes.'); return; }
+  const cfg = { prompt: '' }; if (EMAIL) cfg.login_hint = EMAIL;
+  tokenClient.requestAccessToken(cfg);
+}
+function sessionBanner() { const r = $('reconn'); if (r) r.hidden = tokenOk() || !SSID; }
+setInterval(sessionBanner, 20000);
 function login() {
   initGis();
   if (!tokenClient) { showLogin('O Google ainda está carregando. Espere um instante e toque de novo.'); return; }
@@ -94,6 +108,12 @@ async function onToken(resp) {
   if (!google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE_DRIVE)) { showLogin('O app precisa da permissão para criar e editar a planilha dele. Entre de novo e deixe essa opção marcada.'); return; }
   TK = { token: resp.access_token, exp: Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000 };
   saveTok();
+  if (SSID && !$('scrApp').hidden) {          // só renovou o acesso: continua de onde parou
+    sessionBanner();
+    const b = pendingBtn; pendingBtn = null;
+    if (b && document.body.contains(b)) b.click(); else await reload();
+    return;
+  }
   await start();
 }
 function logout() {
@@ -112,7 +132,11 @@ function renderBand() {
     ? `<input id="saldoIni" inputmode="decimal" value="${fmtIn(num(CFG.saldo_inicial && CFG.saldo_inicial.v))}" aria-label="Saldo inicial"><button class="b sm pri" data-act="saveSaldo">Salvar</button><button class="b sm" data-act="cancelSaldo">Cancelar</button><span style="flex-basis:100%">Quanto você tinha na conta antes do primeiro lançamento.</span>`
     : `<span>Cartões em aberto: ${brl(abertos)}</span><span aria-hidden="true">·</span><button class="link" data-act="editSaldo">ajustar saldo inicial</button>`;
 }
-function showLogin(msg) { showScreen('scrLogin'); const m = $('loginMsg'); m.textContent = msg || ''; m.hidden = !msg; }
+function showLogin(msg) {
+  showScreen('scrLogin'); const m = $('loginMsg'); m.textContent = msg || ''; m.hidden = !msg;
+  $('btnLogin').lastChild.textContent = EMAIL ? 'Continuar como ' + EMAIL : 'Entrar com Google';
+  $('btnOutra').hidden = !EMAIL;
+}
 function showLoading(msg) { showScreen('scrLoading'); $('loadingMsg').textContent = msg; }
 let toastT; function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 4000); }
 function setSaving(on) { $('saving').hidden = !on; document.querySelectorAll('.b.pri').forEach(b => b.disabled = on); }
@@ -129,7 +153,7 @@ async function api(url, opt = {}) {
 }
 function handleErr(e) {
   console.error(e);
-  if (e && e.code === 'auth') { showLogin('Sua sessão do Google expirou. Entre de novo para continuar.'); return; }
+  if (e && e.code === 'auth') { if (SSID) { sessionBanner(); toast('O acesso ao Google expirou. Toque em "Reconectar" no topo e tente de novo.'); } else showLogin('Sua sessão do Google expirou. Entre de novo para continuar.'); return; }
   if (e && e.code === 'net') { toast('Sem conexão com a internet. Confira e tente de novo.'); return; }
   if (e && e.code === 'gone') { toast('Esse item foi alterado em outro aparelho. A tela foi atualizada.'); reload(); return; }
   if (e && e.status === 429) { toast('Muitas alterações seguidas. Espere alguns segundos e tente de novo.'); return; }
@@ -628,6 +652,9 @@ function cartaoCampos(val) {
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, id = b.dataset.id;
+  if (a === 'renew') { renew(); return; }
+  const LOCAL = ['mes', 'mesHoje', 'goto', 'tipo', 'pag', 'editSaldo', 'cancelSaldo', 'askDel', 'panel', 'goPagar', 'logout'];
+  if (!LOCAL.includes(a) && SSID && !tokenOk()) { pendingBtn = b; renew(); return; }   // renova e repete a ação sozinho
   if (a !== 'askDel' && a !== 'del') ui.confirm = null;
   switch (a) {
     case 'mes': ui.mes = addM(ui.mes, +b.dataset.k); render(); break;
@@ -771,10 +798,11 @@ $('xPag').addEventListener('change', visForm);
 ['fValor', 'fDesc'].forEach(i => $(i).addEventListener('input', () => showErr('fErr', '')));
 $('fValor').addEventListener('keydown', e => { if (e.key === 'Enter') document.querySelector('[data-act="addLanc"]').click(); });
 $('btnLogin').addEventListener('click', login);
+$('btnOutra').addEventListener('click', () => { EMAIL = ''; try { localStorage.removeItem('cf-email'); } catch (e) {} if (window.google) { initGis(); tokenClient && tokenClient.requestAccessToken({ prompt: 'select_account' }); } });
 $('fData').value = today();
 $('finFormAdd').innerHTML = finForm('n');
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (ui.tab === 'resumo' && !$('scrApp').hidden) renderResumo(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SSID && !ui.busy) { if (tokenOk()) reload(); else showLogin('Sua sessão do Google expirou. Entre de novo para continuar.'); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SSID && !ui.busy) { if (tokenOk()) reload(); else sessionBanner(); } });
 
 /* ---------------- início ---------------- */
 async function start() {

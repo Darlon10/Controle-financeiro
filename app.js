@@ -446,7 +446,7 @@ function renderCards() {
     let painel = '';
     if (p === 'pagar') painel = `<div class="inline"><div class="form"><div class="fld"><label for="pv">Valor pago (R$)</label><input id="pv" inputmode="decimal" value="${fmtIn(pagar)}"></div><div class="fld"><label for="pd">Data</label><input id="pd" type="date" value="${today()}"></div><div class="fld"><button class="b pri" data-act="pagar" data-id="${c.id}">Confirmar pagamento</button></div></div><p class="note">Sai do seu saldo em conta e libera o mesmo valor no limite. Não conta como gasto, porque as compras já foram lançadas. Se pagar menos que a fatura, o restante continua em aberto.</p></div>`;
     else if (p === 'juros') painel = `<div class="inline"><div class="form"><div class="fld"><label for="jv">Valor dos juros (R$)</label><input id="jv" inputmode="decimal" placeholder="45,90"></div><div class="fld"><label for="jd">Data</label><input id="jd" type="date" value="${today()}"></div><div class="fld"><button class="b pri" data-act="juros" data-id="${c.id}">Lançar juros</button></div></div><p class="note">Entra nos gastos do mês como "Juros do cartão" e na fatura. Não mexe no saldo em conta.</p></div>`;
-    else if (p === 'ajustar') painel = `<div class="inline"><div class="form"><div class="fld"><label for="av">Somar ao valor em aberto (R$)</label><input id="av" inputmode="decimal" placeholder="200,00 ou -200,00"></div><div class="fld"><button class="b pri" data-act="ajustar" data-id="${c.id}">Aplicar ajuste</button></div></div><p class="note">Use para o app bater com o banco. Positivo ocupa limite, negativo libera. O ajuste não entra nos gastos. Ajuste atual: ${brl(c.ajuste)}.</p></div>`;
+    else if (p === 'ajustar') painel = `<div class="inline"><div class="form"><div class="fld"><label for="av">Disponível no app do banco hoje (R$)</label><input id="av" inputmode="decimal" placeholder="${fmtIn(Math.max(0, lim - u)) || '0,00'}"></div><div class="fld"><button class="b pri" data-act="ajustar" data-id="${c.id}">Igualar ao banco</button></div></div><p class="note">Abra o app do banco, veja quanto de limite está disponível e digite aqui. O app calcula o resto sozinho. O ajuste não entra nos gastos do mês.</p></div>`;
     else if (p === 'editar') painel = `<div class="inline"><div class="form"><div class="fld"><label for="eb">Banco</label><select id="eb">${BANKS.map(b => `<option${b === c.banco ? ' selected' : ''}>${b}</option>`).join('')}</select></div><div class="fld"><label for="ea">Apelido</label><input id="ea" value="${esc(c.apelido)}"></div><div class="fld"><label for="el">Limite (R$)</label><input id="el" inputmode="decimal" value="${fmtIn(lim)}"></div><div class="fld"><label for="ef">Dia de fechamento</label><input id="ef" type="number" min="1" max="31" value="${c.fech || ''}"></div><div class="fld"><label for="ev">Dia de vencimento</label><input id="ev" type="number" min="1" max="31" value="${c.venc || ''}"></div><div class="fld"><button class="b pri" data-act="saveCard" data-id="${c.id}">Salvar</button></div></div></div>`;
     const on = k => p === k ? ' style="border-color:var(--accent);color:var(--accent)"' : '';
     return `<div class="item"><div class="cardhead"><span class="t" style="font-weight:600;font-size:1.02rem">${esc(cardNome(c))}</span><span class="d">${Math.round(pc)}% do limite usado</span></div>
@@ -601,9 +601,13 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'ajustar': {
-      const v = money($('av').value); if (isNaN(v) || v === 0) { toast('Digite um valor, como 200,00 ou -200,00.'); return; }
-      const c = cardById(id); ui.panel = null;
-      await updRow('Cartoes', id, { ajuste: r2(c.ajuste + v) }, 'Cartão ajustado');
+      const disp = money($('av').value), c = cardById(id);
+      if (isNaN(disp) || disp < 0) { toast('Digite o valor disponível que aparece no banco, como 95,44.'); return; }
+      if (disp > c.limite) { toast('O disponível não pode ser maior que o limite de ' + brl(c.limite) + '. Confira o limite em "Editar".'); return; }
+      const alvo = r2(c.limite - disp);                 // quanto deve ficar em aberto
+      const novoAjuste = r2(c.ajuste + (alvo - usado(c)));
+      ui.panel = null;
+      await updRow('Cartoes', id, { ajuste: novoAjuste }, 'Pronto: disponível igual ao banco, ' + brl(disp));
       break;
     }
     case 'addFin': {
